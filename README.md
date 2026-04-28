@@ -32,11 +32,11 @@
 
 ```bash
 sh <(wget -O- https://raw.githubusercontent.com/dedikar/routerich-bcw-manager/main/install.sh)
+```
 
-````markdown
 ## Удаление
 
 ```bash
 sh <(wget -O- https://raw.githubusercontent.com/dedikar/routerich-bcw-manager/main/uninstall.sh)
+```
 
-````markdown
