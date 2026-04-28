@@ -5,7 +5,7 @@ echo " RouteRich BCW Manager Installer "
 echo "=================================="
 echo ""
 
-URL="https://raw.githubusercontent.com/dedikar/routerich-bcw-manager/dev/blockcheckw-manager.sh"
+URL="https://raw.githubusercontent.com/dedikar/routerich-bcw-manager/main/blockcheckw-manager.sh"
 
 echo "[1/4] Загрузка..."
 wget -O /root/blockcheckw-manager.sh "$URL" || exit 1
