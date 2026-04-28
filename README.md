@@ -41,3 +41,14 @@ wget -O /tmp/install.sh https://raw.githubusercontent.com/dedikar/routerich-bcw-
 ```bash
 wget -O /tmp/uninstall.sh https://raw.githubusercontent.com/dedikar/routerich-bcw-manager/main/uninstall.sh && sh /tmp/uninstall.sh
 ```
+
+## Использование
+
+После установки откроется окно менеджера  
+<img width="696" height="299" alt="image" src="https://github.com/user-attachments/assets/588e5e2c-e41c-4b06-9cd0-46d435711e73" />
+
+Перейдите в настройки и введите желаемый домен для поиска стратегии, выберите желаемый(е) протокол(ы)  
+<img width="353" height="268" alt="image" src="https://github.com/user-attachments/assets/7d30b6f1-6945-45f2-9a43-8e17a9b98a9d" />
+
+Запустите быстрый, либо полный поиск. 
+Найденные стратегии будут сохранены в /root/, также возможен просмотр стратегий из меню скрипта.
