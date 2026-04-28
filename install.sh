@@ -11,14 +11,12 @@ echo "[1/4] Загрузка..."
 wget -O /root/blockcheckw-manager.sh "$URL" || exit 1
 
 echo "[2/4] Права доступа..."
-chmod +x /root/blockcheckw-manager.sh
+chmod +x /root/blockcheckw-manager.sh || exit 1
 
 echo "[3/4] Создание команды bcw..."
-ln -sf /root/blockcheckw-manager.sh /usr/bin/bcw
+ln -sf /root/blockcheckw-manager.sh /usr/bin/bcw || exit 1
 
 echo "[4/4] Готово."
 echo ""
 echo "Запуск: bcw"
 echo ""
-
-bcw
