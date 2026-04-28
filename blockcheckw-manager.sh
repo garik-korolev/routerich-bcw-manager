@@ -23,9 +23,6 @@ CFG="/root/.bcw.conf"
 SELF="/root/blockcheckw-manager.sh"
 LINK="/usr/bin/bcw"
 
-# Глобальная переменная для состояния zapret
-ZAPRET_WAS_RUNNING=0
-
 pause(){ printf "\n${CYAN}Нажмите Enter...${NC}"; read x; }
 
 save_cfg() {
@@ -223,43 +220,32 @@ esac
 done
 }
 
-zapret_stop() {
-    ZAPRET_WAS_RUNNING=0
-    
+# Проверка статуса zapret2 (возвращает 0 если запущен, 1 если остановлен)
+is_zapret_running() {
     if [ -x /etc/init.d/zapret2 ]; then
-        if /etc/init.d/zapret2 status 2>/dev/null | grep -q "running"; then
-            ZAPRET_WAS_RUNNING=1
-            printf "\n${YELLOW}Останавливаем zapret2...${NC}\n"
-            /etc/init.d/zapret2 stop >/dev/null 2>&1
-            sleep 2
-            printf "${GREEN}zapret2 остановлен${NC}\n"
-        else
-            printf "\n${CYAN}zapret2 не запущен, пропускаем остановку.${NC}\n"
-        fi
-    else
-        if pgrep -f "nfqws" >/dev/null 2>&1 || pgrep -f "tpws" >/dev/null 2>&1; then
-            ZAPRET_WAS_RUNNING=1
-            printf "\n${YELLOW}Обнаружены процессы nfqws/tpws, останавливаем...${NC}\n"
-            pkill -f "nfqws" 2>/dev/null
-            pkill -f "tpws" 2>/dev/null
-            sleep 2
-            printf "${GREEN}процессы остановлены${NC}\n"
-        else
-            printf "\n${CYAN}zapret2 не обнаружен, пропускаем остановку.${NC}\n"
-        fi
+        /etc/init.d/zapret2 status 2>/dev/null | grep -q "running" && return 0
     fi
+    pgrep -f "nfqws" >/dev/null 2>&1 && return 0
+    pgrep -f "tpws" >/dev/null 2>&1 && return 0
+    return 1
 }
 
+# Остановка zapret2 (принудительная)
+zapret_stop_force() {
+    if [ -x /etc/init.d/zapret2 ]; then
+        /etc/init.d/zapret2 stop >/dev/null 2>&1
+        sleep 1
+    fi
+    pkill -f "nfqws" 2>/dev/null
+    pkill -f "tpws" 2>/dev/null
+    sleep 1
+}
+
+# Запуск zapret2
 zapret_start() {
-    if [ "$ZAPRET_WAS_RUNNING" = "1" ]; then
-        if [ -x /etc/init.d/zapret2 ]; then
-            printf "\n${YELLOW}Запускаем zapret2...${NC}\n"
-            /etc/init.d/zapret2 start >/dev/null 2>&1
-            sleep 2
-            printf "${GREEN}zapret2 запущен${NC}\n"
-        fi
-    else
-        printf "\n${CYAN}zapret2 не был остановлен скриптом, пропускаем запуск.${NC}\n"
+    if [ -x /etc/init.d/zapret2 ]; then
+        /etc/init.d/zapret2 start >/dev/null 2>&1
+        sleep 2
     fi
 }
 
@@ -322,7 +308,16 @@ printf "${CYAN}${BOLD}=========================================${NC}\n"
 status_line
 echo ""
 
-zapret_stop
+# Сохраняем состояние ДО сканирования
+WAS_RUNNING=0
+if is_zapret_running; then
+    WAS_RUNNING=1
+    printf "\n${YELLOW}zapret2 был запущен, останавливаем...${NC}\n"
+    zapret_stop_force
+    printf "${GREEN}zapret2 остановлен${NC}\n"
+else
+    printf "\n${CYAN}zapret2 не был запущен.${NC}\n"
+fi
 
 printf "\n${CYAN}Нажмите Enter для запуска...${NC}"
 read x
@@ -376,7 +371,21 @@ else
     printf "  - Проблемы с сетью\n"
 fi
 
-zapret_start
+# Восстанавливаем состояние ПОСЛЕ сканирования
+if [ "$WAS_RUNNING" = "1" ]; then
+    printf "\n${YELLOW}Восстанавливаем zapret2...${NC}\n"
+    zapret_start
+    printf "${GREEN}zapret2 запущен${NC}\n"
+else
+    # Если изначально был выключен, проверяем не запустился ли он случайно
+    if is_zapret_running; then
+        printf "\n${YELLOW}zapret2 случайно запустился, останавливаем...${NC}\n"
+        zapret_stop_force
+        printf "${GREEN}zapret2 остановлен${NC}\n"
+    else
+        printf "\n${CYAN}zapret2 не был запущен, пропускаем запуск.${NC}\n"
+    fi
+fi
 
 printf "\n${GREEN}${BOLD}Быстрый поиск завершён.${NC}\n"
 pause
@@ -390,7 +399,16 @@ printf "${CYAN}${BOLD}=========================================${NC}\n"
 status_line
 echo ""
 
-zapret_stop
+# Сохраняем состояние ДО сканирования
+WAS_RUNNING=0
+if is_zapret_running; then
+    WAS_RUNNING=1
+    printf "\n${YELLOW}zapret2 был запущен, останавливаем...${NC}\n"
+    zapret_stop_force
+    printf "${GREEN}zapret2 остановлен${NC}\n"
+else
+    printf "\n${CYAN}zapret2 не был запущен.${NC}\n"
+fi
 
 printf "\n${CYAN}Нажмите Enter для запуска...${NC}"
 read x
@@ -408,7 +426,10 @@ REPORT="$(ls -t *_report_vanilla.txt 2>/dev/null | head -1)"
 
 if [ -z "$REPORT" ]; then
     printf "\n${RED}${BOLD}Домен доступен без обхода или нечего проверять.${NC}\n"
-    zapret_start
+    # Восстанавливаем состояние
+    if [ "$WAS_RUNNING" = "1" ]; then
+        zapret_start
+    fi
     pause
     return
 fi
@@ -461,7 +482,21 @@ fi
 
 rm -f "$REPORT"
 
-zapret_start
+# Восстанавливаем состояние ПОСЛЕ сканирования
+if [ "$WAS_RUNNING" = "1" ]; then
+    printf "\n${YELLOW}Восстанавливаем zapret2...${NC}\n"
+    zapret_start
+    printf "${GREEN}zapret2 запущен${NC}\n"
+else
+    # Если изначально был выключен, проверяем не запустился ли он случайно
+    if is_zapret_running; then
+        printf "\n${YELLOW}zapret2 случайно запустился, останавливаем...${NC}\n"
+        zapret_stop_force
+        printf "${GREEN}zapret2 остановлен${NC}\n"
+    else
+        printf "\n${CYAN}zapret2 не был запущен, пропускаем запуск.${NC}\n"
+    fi
+fi
 
 printf "\n${GREEN}${BOLD}Полный поиск завершён.${NC}\n"
 pause
