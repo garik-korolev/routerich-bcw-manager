@@ -27,3 +27,8 @@
 - просмотр результатов
 - очистка логов и отчётов
 - запуск одной командой: `bcw`
+
+## Установка
+
+```bash
+sh <(wget -O- https://raw.githubusercontent.com/dedikar/routerich-bcw-manager/main/install.sh)
