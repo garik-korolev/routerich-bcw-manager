@@ -236,17 +236,6 @@ zapret_stop() {
         else
             printf "\n${CYAN}zapret2 не запущен, пропускаем остановку.${NC}\n"
         fi
-    else
-        if pgrep -f "nfqws" >/dev/null 2>&1 || pgrep -f "tpws" >/dev/null 2>&1; then
-            ZAPRET_WAS_RUNNING=1
-            printf "\n${YELLOW}Обнаружены процессы nfqws/tpws, останавливаем...${NC}\n"
-            pkill -f "nfqws" 2>/dev/null
-            pkill -f "tpws" 2>/dev/null
-            sleep 2
-            printf "${GREEN}процессы остановлены${NC}\n"
-        else
-            printf "\n${CYAN}zapret2 не обнаружен, пропускаем остановку.${NC}\n"
-        fi
     fi
 }
 
