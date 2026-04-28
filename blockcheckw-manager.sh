@@ -336,7 +336,8 @@ blockcheckw -w "$WORKERS" scan \
 -p "$PROTO" \
 --timeout "$TIMEOUT" \
 --dns "$DNS_MODE" \
---top 20
+--top 20 \
+--auto
 
 REPORT="$(ls -t *_report_vanilla.txt 2>/dev/null | head -1)"
 DATE="$(date +%Y-%m-%d_%H-%M-%S)"
