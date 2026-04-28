@@ -3,7 +3,7 @@
 echo "=================================="
 echo " RouteRich BCW Manager Installer "
 echo "=================================="
-echo ""
+echo
 
 URL="https://raw.githubusercontent.com/dedikar/routerich-bcw-manager/main/blockcheckw-manager.sh"
 
@@ -17,6 +17,6 @@ echo "[3/4] Создание команды bcw..."
 ln -sf /root/blockcheckw-manager.sh /usr/bin/bcw || exit 1
 
 echo "[4/4] Готово."
-echo ""
+echo
 echo "Запуск: bcw"
-echo ""
+echo
