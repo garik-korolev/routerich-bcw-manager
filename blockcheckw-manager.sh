@@ -72,9 +72,7 @@ cd /tmp || return
 
 printf "${YELLOW}→ Получение информации о последней версии...${NC}\n"
 URL="$(wget -qO- https://api.github.com/repos/rcd27/blockcheckw/releases/latest \
-| grep browser_download_url \
-| grep linux-arm64.tar.gz \
-| head -1 | cut -d '"' -f4)"
+| jq -r '.assets[] | select(.name | contains("linux-arm64.tar.gz")) | .browser_download_url')"
 
 if [ -z "$URL" ]; then
     printf "${RED}${BOLD}Ошибка: не удалось получить ссылку для загрузки.${NC}\n"
@@ -90,7 +88,7 @@ cd /tmp/bcwtmp || return
 printf "${GREEN}✓ Готово${NC}\n\n"
 
 printf "${YELLOW}→ Загрузка архива...${NC}\n"
-wget --show-progress -O bcw.tar.gz "$URL" 2>&1
+wget -O bcw.tar.gz "$URL" 2>&1
 if [ $? -ne 0 ]; then
     printf "\n${RED}${BOLD}Ошибка загрузки.${NC}\n"
     pause
