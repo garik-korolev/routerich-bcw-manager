@@ -1,6 +1,6 @@
 cat > /root/blockcheckw-manager.sh <<'EOF'
 #!/bin/sh
-# BlockCheckW Manager v0.3.5
+# BlockCheckW Manager v0.4.1
 
 # Цвета
 if [ -t 1 ]; then
@@ -258,12 +258,15 @@ printf "${CYAN}${BOLD}=========================================${NC}\n\n"
 
 QUICK_COUNT=$(ls -1 /root/*_quick.txt 2>/dev/null | wc -l)
 WORKING_COUNT=$(ls -1 /root/*_working.txt 2>/dev/null | wc -l)
+UNIVERSAL_JSON_COUNT=$(ls -1 /root/universal_*.json 2>/dev/null | wc -l)
+UNIVERSAL_TXT_COUNT=$(ls -1 /root/universal_*.txt 2>/dev/null | wc -l)
+UNIVERSAL_WORKING_COUNT=$(ls -1 /root/universal_working_*.txt 2>/dev/null | wc -l)
 JSON_COUNT=$(ls -1 /root/*_report.json 2>/dev/null | wc -l)
 SCAN_COUNT=$(ls -1 /root/*_scan.json 2>/dev/null | wc -l)
 CHECK_COUNT=$(ls -1 /root/*_check.json 2>/dev/null | wc -l)
 REPORT_COUNT=$(ls -1 /root/*_report_vanilla.txt 2>/dev/null | wc -l)
 
-TOTAL=$((QUICK_COUNT + WORKING_COUNT + JSON_COUNT + SCAN_COUNT + CHECK_COUNT + REPORT_COUNT))
+TOTAL=$((QUICK_COUNT + WORKING_COUNT + UNIVERSAL_JSON_COUNT + UNIVERSAL_TXT_COUNT + UNIVERSAL_WORKING_COUNT + JSON_COUNT + SCAN_COUNT + CHECK_COUNT + REPORT_COUNT))
 
 if [ "$TOTAL" -eq 0 ]; then
     printf "${YELLOW}Нет файлов для удаления.${NC}\n"
@@ -273,7 +276,10 @@ fi
 
 printf "${YELLOW}Найдено файлов:${NC}\n"
 printf "  Быстрые отчёты (*_quick.txt): ${CYAN}%s${NC}\n" "$QUICK_COUNT"
-printf "  Рабочие стратегии (*_working.txt): ${CYAN}%s${NC}\n" "$WORKING_COUNT"
+printf "  Рабочие стратегии (один домен) (*_working.txt): ${CYAN}%s${NC}\n" "$WORKING_COUNT"
+printf "  Универсальные JSON (universal_*.json): ${CYAN}%s${NC}\n" "$UNIVERSAL_JSON_COUNT"
+printf "  Универсальные TXT (universal_*.txt): ${CYAN}%s${NC}\n" "$UNIVERSAL_TXT_COUNT"
+printf "  Универсальные проверенные (universal_working_*.txt): ${CYAN}%s${NC}\n" "$UNIVERSAL_WORKING_COUNT"
 printf "  JSON отчёты (*_report.json): ${CYAN}%s${NC}\n" "$JSON_COUNT"
 printf "  Scan JSON (*_scan.json): ${CYAN}%s${NC}\n" "$SCAN_COUNT"
 printf "  Check JSON (*_check.json): ${CYAN}%s${NC}\n" "$CHECK_COUNT"
@@ -288,6 +294,9 @@ case "$answer" in
     y|Y|yes|Yes|YES)
         rm -f /root/*_quick.txt 2>/dev/null
         rm -f /root/*_working.txt 2>/dev/null
+        rm -f /root/universal_*.json 2>/dev/null
+        rm -f /root/universal_*.txt 2>/dev/null
+        rm -f /root/universal_working_*.txt 2>/dev/null
         rm -f /root/*_report.json 2>/dev/null
         rm -f /root/*_scan.json 2>/dev/null
         rm -f /root/*_check.json 2>/dev/null
@@ -454,6 +463,191 @@ printf "\n${GREEN}${BOLD}Полный поиск завершён.${NC}\n"
 pause
 }
 
+run_universal_scan() {
+clear
+printf "${CYAN}${BOLD}=========================================${NC}\n"
+printf "${CYAN}${BOLD}  Универсальный поиск (несколько доменов)${NC}\n"
+printf "${CYAN}${BOLD}=========================================${NC}\n"
+status_line
+echo ""
+
+printf "${CYAN}Введите домены через пробел (или нажмите Enter для использования текущих):${NC}\n"
+printf "Текущие: ${GREEN}$DOMAINS${NC}\n"
+printf "→ "
+read -r UNIVERSAL_DOMAINS
+if [ -z "$UNIVERSAL_DOMAINS" ]; then
+    UNIVERSAL_DOMAINS="$DOMAINS"
+    printf "${CYAN}Используются текущие домены: ${GREEN}$UNIVERSAL_DOMAINS${NC}\n"
+else
+    printf "${CYAN}Будут использованы домены: ${GREEN}$UNIVERSAL_DOMAINS${NC}\n"
+fi
+
+TMP_DOMAIN_FILE="/tmp/universal_domains_$$.txt"
+echo "$UNIVERSAL_DOMAINS" | tr ' ' '\n' > "$TMP_DOMAIN_FILE"
+
+DATE="$(date +%Y-%m-%d_%H-%M-%S)"
+OUTPUT_JSON="/root/universal_${DATE}.json"
+OUTPUT_TXT="/root/universal_${DATE}.txt"
+
+printf "\n${YELLOW}→ Запуск универсального поиска...${NC}\n"
+printf "${DIM}Это может занять длительное время.${NC}\n\n"
+
+WAS_RUNNING=0
+if [ -x /etc/init.d/zapret2 ]; then
+    if /etc/init.d/zapret2 status 2>/dev/null | grep -q "running"; then
+        WAS_RUNNING=1
+        printf "${YELLOW}Останавливаем zapret2...${NC}\n"
+        /etc/init.d/zapret2 stop >/dev/null 2>&1
+        sleep 2
+        printf "${GREEN}zapret2 остановлен${NC}\n"
+    else
+        printf "${CYAN}zapret2 не запущен, пропускаем остановку.${NC}\n"
+    fi
+fi
+
+blockcheckw universal \
+    --domain-list "$TMP_DOMAIN_FILE" \
+    -p "$PROTO" \
+    --dns "$DNS_MODE" \
+    --auto \
+    -o "$OUTPUT_JSON"
+
+if [ "$WAS_RUNNING" = "1" ]; then
+    printf "\n${YELLOW}Запускаем zapret2...${NC}\n"
+    /etc/init.d/zapret2 start >/dev/null 2>&1
+    sleep 2
+    printf "${GREEN}zapret2 запущен${NC}\n"
+else
+    printf "\n${CYAN}zapret2 не был остановлен скриптом, пропускаем запуск.${NC}\n"
+fi
+
+if [ ! -f "$OUTPUT_JSON" ]; then
+    printf "\n${RED}Ошибка: файл с результатами не создан.${NC}\n"
+    rm -f "$TMP_DOMAIN_FILE"
+    pause
+    return
+fi
+
+# Подсчёт стратегий через jq
+if command -v jq >/dev/null 2>&1; then
+    STRATEGY_COUNT=$(jq '[.protocols[].strategies[]?] | length' "$OUTPUT_JSON" 2>/dev/null)
+    [ -z "$STRATEGY_COUNT" ] && STRATEGY_COUNT=0
+else
+    STRATEGY_COUNT=$(grep -c '"args":' "$OUTPUT_JSON" 2>/dev/null)
+fi
+
+printf "\n${GREEN}✓ Результат универсального поиска сохранён:${NC}\n"
+printf "   JSON: ${OUTPUT_JSON}\n"
+if [ "$STRATEGY_COUNT" -gt 0 ]; then
+    # Создание текстового файла с командами
+    if command -v jq >/dev/null 2>&1; then
+        jq -r '.protocols[].strategies[]?.args' "$OUTPUT_JSON" | sed 's/^/nfqws2 /' > "$OUTPUT_TXT"
+    else
+        grep '"args":' "$OUTPUT_JSON" | sed 's/.*"args": "//;s/",$//;s/",.*//;s/^/nfqws2 /' > "$OUTPUT_TXT"
+    fi
+    printf "   TXT (команды): ${OUTPUT_TXT}\n"
+fi
+printf "${CYAN}Найдено универсальных стратегий: ${GREEN}%s${NC}\n" "$STRATEGY_COUNT"
+
+if [ "$STRATEGY_COUNT" -gt 0 ]; then
+    printf "${YELLOW}Желаете проверить лучшие стратегии (check) для одного из доменов? (y/N): ${NC}"
+    read -r DO_CHECK
+    case "$DO_CHECK" in
+        y|Y|yes|Yes|YES)
+            CHECK_DOMAIN=$(echo "$UNIVERSAL_DOMAINS" | awk '{print $1}')
+            printf "${CYAN}Домен для проверки: ${GREEN}$CHECK_DOMAIN${NC}\n"
+            printf "${CYAN}Количество проверяемых стратегий (по умолчанию 20, можно задать любое): ${NC}"
+            read -r TAKE_COUNT
+            [ -z "$TAKE_COUNT" ] && TAKE_COUNT=20
+
+            printf "\n${YELLOW}→ Запуск проверки (check) для первых ${TAKE_COUNT} стратегий...${NC}\n"
+
+            # Определяем протокол для подстановки в префикс
+            CHECK_PROTO="tls13"
+            case "$PROTO" in
+                *tls13*) CHECK_PROTO="tls13" ;;
+                *tls12*) CHECK_PROTO="tls12" ;;
+                *http*)  CHECK_PROTO="http" ;;
+            esac
+
+            STRAT_FILE="/tmp/universal_strategies_$$.txt"
+            # Создаём файл в формате vanilla-отчёта, который понимает check --from-file
+            if command -v jq >/dev/null 2>&1; then
+                jq -r ".protocols[].strategies[]?.args" "$OUTPUT_JSON" \
+                | head -n "$TAKE_COUNT" \
+                | sed "s/^/curl_test_https_${CHECK_PROTO} ipv4 ${CHECK_DOMAIN} : nfqws2 /" > "$STRAT_FILE"
+            else
+                grep '"args":' "$OUTPUT_JSON" \
+                | head -n "$TAKE_COUNT" \
+                | sed 's/.*"args": "//;s/",$//;s/",.*//' \
+                | sed "s/^/curl_test_https_${CHECK_PROTO} ipv4 ${CHECK_DOMAIN} : nfqws2 /" > "$STRAT_FILE"
+            fi
+
+            STRAT_COUNT=$(wc -l < "$STRAT_FILE")
+            if [ "$STRAT_COUNT" -gt 0 ]; then
+                CHECK_WAS_RUNNING=0
+                if [ -x /etc/init.d/zapret2 ]; then
+                    if /etc/init.d/zapret2 status 2>/dev/null | grep -q "running"; then
+                        CHECK_WAS_RUNNING=1
+                        printf "${YELLOW}Останавливаем zapret2 для проверки...${NC}\n"
+                        /etc/init.d/zapret2 stop >/dev/null 2>&1
+                        sleep 2
+                        printf "${GREEN}zapret2 остановлен${NC}\n"
+                    fi
+                fi
+
+                # Запуск check
+                blockcheckw check \
+                    --from-file "$STRAT_FILE" \
+                    -d "$CHECK_DOMAIN" \
+                    --dns "$DNS_MODE" \
+                    --auto \
+                    --take "$TAKE_COUNT"
+
+                if [ "$CHECK_WAS_RUNNING" = "1" ]; then
+                    printf "\n${YELLOW}Запускаем zapret2...${NC}\n"
+                    /etc/init.d/zapret2 start >/dev/null 2>&1
+                    sleep 2
+                    printf "${GREEN}zapret2 запущен${NC}\n"
+                fi
+                rm -f "$STRAT_FILE"
+
+                # Сохраняем успешные стратегии из check результата
+                CHECK_JSON_FILE="$(ls -t *_check.json 2>/dev/null | head -1)"
+                if [ -n "$CHECK_JSON_FILE" ] && command -v jq >/dev/null 2>&1; then
+                    # Извлекаем аргументы успешных стратегий (где success_rate == 1.0)
+                    WORKING_COUNT=$(jq '[.strategies[]? | select(.success_rate == 1.0) ] | length' "$CHECK_JSON_FILE" 2>/dev/null)
+                    if [ -n "$WORKING_COUNT" ] && [ "$WORKING_COUNT" -gt 0 ]; then
+                        WORKING_FILE="/root/universal_working_${DATE}.txt"
+                        jq -r '.strategies[]? | select(.success_rate == 1.0) | "nfqws2 " + .args' "$CHECK_JSON_FILE" > "$WORKING_FILE"
+                        printf "\n${GREEN}✓ Проверенные рабочие стратегии сохранены: ${WORKING_FILE}${NC}\n"
+                        printf "${CYAN}Количество проверенных рабочих стратегий: ${GREEN}%s${NC}\n" "$WORKING_COUNT"
+                    else
+                        printf "\n${RED}Рабочих стратегий не найдено.${NC}\n"
+                    fi
+                    rm -f "$CHECK_JSON_FILE"
+                else
+                    printf "\n${YELLOW}Не удалось сохранить проверенные стратегии (jq не установлен или нет JSON).${NC}\n"
+                fi
+            else
+                printf "${RED}Не удалось извлечь стратегии для проверки.${NC}\n"
+            fi
+            printf "\n${GREEN}✓ Проверка завершена.${NC}\n"
+            ;;
+        *)
+            printf "\n${CYAN}Проверка отложена. Вы можете запустить её позже вручную:${NC}\n"
+            printf "  jq -r '.protocols[].strategies[]?.args' %s | head -20 | sed 's/^/nfqws2 /' > /tmp/check.txt && blockcheckw check --from-file /tmp/check.txt -d %s\n" "$OUTPUT_JSON" "$CHECK_DOMAIN"
+            ;;
+    esac
+else
+    printf "\n${CYAN}Универсальные стратегии не найдены. Проверка не требуется.${NC}\n"
+fi
+
+rm -f "$TMP_DOMAIN_FILE"
+printf "\n${GREEN}${BOLD}Универсальный поиск завершён.${NC}\n"
+pause
+}
+
 show_results() {
 while true
 do
@@ -462,9 +656,10 @@ printf "${CYAN}${BOLD}=========================================${NC}\n"
 printf "${CYAN}${BOLD}  Результаты поиска${NC}\n"
 printf "${CYAN}${BOLD}=========================================${NC}\n"
 echo ""
-echo "1. Показать рабочие стратегии"
-echo "2. Показать быстрый отчёт"
-echo "3. Очистить все логи и отчёты"
+echo "1. Показать рабочие стратегии (один домен)"
+echo "2. Показать быстрый отчёт (один домен)"
+echo "3. Показать универсальные отчёты (несколько доменов)"
+echo "4. Очистить все логи и отчёты"
 echo "0. Назад"
 echo ""
 printf "Выбор: "
@@ -498,6 +693,55 @@ case "$S" in
     fi
     ;;
 3)
+    # Сначала показываем рабочие проверенные универсальные, если есть
+    WORKING_FILE="$(ls -t /root/universal_working_*.txt 2>/dev/null | head -1)"
+    if [ -n "$WORKING_FILE" ]; then
+        clear
+        printf "${CYAN}${BOLD}=========================================${NC}\n"
+        printf "${CYAN}${BOLD}  УНИВЕРСАЛЬНЫЕ ПРОВЕРЕННЫЕ СТРАТЕГИИ${NC}\n"
+        printf "${CYAN}${BOLD}=========================================${NC}\n"
+        echo ""
+        cat "$WORKING_FILE"
+        echo ""
+        printf "${CYAN}Файл:${NC} $WORKING_FILE\n"
+        pause
+    else
+        # Иначе показываем обычный универсальный TXT
+        TXT_FILE="$(ls -t /root/universal_*.txt 2>/dev/null | head -1)"
+        JSON_FILE="$(ls -t /root/universal_*.json 2>/dev/null | head -1)"
+        if [ -n "$TXT_FILE" ]; then
+            clear
+            printf "${CYAN}${BOLD}=========================================${NC}\n"
+            printf "${CYAN}${BOLD}  УНИВЕРСАЛЬНЫЙ ОТЧЁТ (команды)${NC}\n"
+            printf "${CYAN}${BOLD}=========================================${NC}\n"
+            echo ""
+            cat "$TXT_FILE"
+            echo ""
+            printf "${CYAN}Файл:${NC} $TXT_FILE\n"
+            pause
+        elif [ -n "$JSON_FILE" ]; then
+            clear
+            printf "${CYAN}${BOLD}=========================================${NC}\n"
+            printf "${CYAN}${BOLD}  УНИВЕРСАЛЬНЫЙ ОТЧЁТ (JSON)${NC}\n"
+            printf "${CYAN}${BOLD}=========================================${NC}\n"
+            echo ""
+            if command -v jq >/dev/null 2>&1; then
+                jq -r '.protocols[].strategies[]?.args' "$JSON_FILE" | head -50 | sed 's/^/nfqws2 /'
+                echo ""
+                echo "... (первые 50)"
+            else
+                head -50 "$JSON_FILE"
+            fi
+            echo ""
+            printf "${CYAN}Файл:${NC} $JSON_FILE\n"
+            pause
+        else
+            printf "${RED}Нет универсальных отчётов.${NC}\n"
+            pause
+        fi
+    fi
+    ;;
+4)
     cleanup_logs
     ;;
 0) return ;;
@@ -512,14 +756,15 @@ while true
 do
 clear
 printf "${CYAN}${BOLD}==================================${NC}\n"
-printf "${CYAN}${BOLD} BlockCheckW Manager v0.3.5${NC}\n"
+printf "${CYAN}${BOLD} BlockCheckW Manager v0.4.1${NC}\n"
 printf "${CYAN}${BOLD}==================================${NC}\n"
 echo "1. Установить / обновить blockcheckw"
 echo "2. Удалить blockcheckw + настройки"
-echo "3. Быстрый поиск (только сканирование)"
-echo "4. Полный поиск (сканирование + проверка)"
-echo "5. Настройки"
-echo "6. Показать результаты"
+echo "3. Быстрый поиск (только сканирование, один домен)"
+echo "4. Полный поиск (сканирование + проверка, один домен)"
+echo "5. Универсальный поиск (несколько доменов)"
+echo "6. Настройки"
+echo "7. Показать результаты"
 echo "0. Выход"
 printf "${CYAN}${BOLD}==================================${NC}\n"
 status_line
@@ -532,8 +777,9 @@ case "$N" in
 2) remove_all ;;
 3) run_quick_scan ;;
 4) run_full_scan ;;
-5) settings_menu ;;
-6) show_results ;;
+5) run_universal_scan ;;
+6) settings_menu ;;
+7) show_results ;;
 0) exit 0 ;;
 esac
 done
