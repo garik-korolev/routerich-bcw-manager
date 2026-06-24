@@ -1,6 +1,12 @@
-cat > /root/blockcheckw-manager.sh <<'EOF'
 #!/bin/sh
-# BlockCheckW Manager v0.4.1
+# BlockCheckW Manager v0.4.1 – без GitHub API
+
+# ============================================================
+# ВСТРОЕННАЯ ССЫЛКА НА АРХИВ (если не задана – будет запрошена)
+# Замените на актуальную версию, например:
+# FIXED_BLOCKCHECKW_URL="https://github.com/rcd27/blockcheckw/releases/download/v0.8.0/blockcheckw-linux-arm64.tar.gz"
+FIXED_BLOCKCHECKW_URL="https://github.com/rcd27/blockcheckw/releases/download/v0.8.10/blockcheckw-linux-arm64.tar.gz"
+# ============================================================
 
 # Цвета
 if [ -t 1 ]; then
@@ -70,16 +76,52 @@ printf "${CYAN}${BOLD}=========================================${NC}\n\n"
 
 cd /tmp || return
 
-printf "${YELLOW}→ Получение информации о последней версии...${NC}\n"
-URL="$(wget -qO- https://api.github.com/repos/rcd27/blockcheckw/releases/latest \
-| jq -r '.assets[] | select(.name | contains("linux-arm64.tar.gz")) | .browser_download_url')"
+# Запрос URL у пользователя
+printf "${YELLOW}Для установки требуется ссылка на архив blockcheckw для ARM64.${NC}\n"
+if [ -n "$FIXED_BLOCKCHECKW_URL" ]; then
+    printf "Встроенная ссылка: ${CYAN}%s${NC}\n" "$FIXED_BLOCKCHECKW_URL"
+    printf "Нажмите Enter, чтобы использовать её, или введите свою ссылку: "
+else
+    printf "Введите URL для скачивания (или укажите путь к локальному файлу): "
+fi
+read -r CUSTOM_URL
 
-if [ -z "$URL" ]; then
-    printf "${RED}${BOLD}Ошибка: не удалось получить ссылку для загрузки.${NC}\n"
+if [ -z "$CUSTOM_URL" ] && [ -n "$FIXED_BLOCKCHECKW_URL" ]; then
+    URL="$FIXED_BLOCKCHECKW_URL"
+elif [ -n "$CUSTOM_URL" ]; then
+    URL="$CUSTOM_URL"
+else
+    printf "${RED}${BOLD}Не задан URL и нет встроенной ссылки.${NC}\n"
     pause
     return
 fi
-printf "${GREEN}✓ Ссылка получена:${NC} ${URL##*/}\n\n"
+
+# Если URL указывает на локальный файл (начинается с / или .)
+if echo "$URL" | grep -qE '^(/|\.)'; then
+    if [ -f "$URL" ]; then
+        printf "${GREEN}✓ Используется локальный файл:${NC} $URL\n"
+        cp "$URL" /tmp/bcw.tar.gz
+        if [ $? -ne 0 ]; then
+            printf "${RED}${BOLD}Не удалось скопировать файл.${NC}\n"
+            pause
+            return
+        fi
+    else
+        printf "${RED}${BOLD}Локальный файл не найден:${NC} $URL\n"
+        pause
+        return
+    fi
+else
+    # Скачиваем по URL
+    printf "${YELLOW}→ Загрузка архива...${NC}\n"
+    wget -O bcw.tar.gz "$URL" 2>&1
+    if [ $? -ne 0 ]; then
+        printf "\n${RED}${BOLD}Ошибка загрузки. Проверьте URL.${NC}\n"
+        pause
+        return
+    fi
+    printf "${GREEN}✓ Загрузка завершена${NC}\n\n"
+fi
 
 printf "${YELLOW}→ Подготовка временной директории...${NC}\n"
 rm -rf /tmp/bcwtmp
@@ -87,17 +129,8 @@ mkdir -p /tmp/bcwtmp
 cd /tmp/bcwtmp || return
 printf "${GREEN}✓ Готово${NC}\n\n"
 
-printf "${YELLOW}→ Загрузка архива...${NC}\n"
-wget -O bcw.tar.gz "$URL" 2>&1
-if [ $? -ne 0 ]; then
-    printf "\n${RED}${BOLD}Ошибка загрузки.${NC}\n"
-    pause
-    return
-fi
-printf "${GREEN}✓ Загрузка завершена${NC}\n\n"
-
 printf "${YELLOW}→ Распаковка...${NC}\n"
-tar -xzf bcw.tar.gz
+tar -xzf /tmp/bcw.tar.gz
 if [ $? -ne 0 ]; then
     printf "${RED}${BOLD}Ошибка распаковки.${NC}\n"
     pause
@@ -139,6 +172,7 @@ if [ -n "$VERSION" ]; then
 fi
 
 printf "\n${CYAN}Команда запуска:${NC} ${BOLD}bcw${NC}\n"
+rm -f /tmp/bcw.tar.gz
 pause
 }
 
@@ -783,8 +817,3 @@ case "$N" in
 0) exit 0 ;;
 esac
 done
-EOF
-
-chmod +x /root/blockcheckw-manager.sh
-ln -sf /root/blockcheckw-manager.sh /usr/bin/bcw
-bcw
